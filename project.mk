@@ -10,14 +10,14 @@ PADVALUE := 0xFF
 VERSION := 0
 
 # 4-ASCII letter game ID
-GAMEID := BOIL
+GAMEID := VURK
 
 # Game title, up to 11 ASCII chars
-TITLE := BOILERPLATE
+TITLE := da1
 
 # New licensee, 2 ASCII chars
 # Homebrew games FTW!
-LICENSEE := HB
+LICENSEE := DA
 # Old licensee, please set to 0x33 (required to get SGB compatibility)
 OLDLIC := 0x33
 
@@ -34,7 +34,7 @@ MBC := 0x00
 SRAMSIZE := 0x00
 
 # ROM name
-ROMNAME := boilerplate
+ROMNAME := da1
 ROMEXT  := gb
 
 
