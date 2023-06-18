@@ -1,6 +1,14 @@
 include "hardware.inc"
 
-SECTION "Timer Interrupt", ROM0[$0050]
+SECTION "VBlank Interrupt Vector", ROM0[$0040]
+	
+	jp VBlankInterrupt
+
+SECTION "Stat Interrupt Vector", ROM0[$0048]
+
+	jp StatInterrupt
+
+SECTION "Timer Interrupt Vector", ROM0[$0050]
 
 	jp TimerInterrupt
 
@@ -21,8 +29,14 @@ SECTION "Header", ROM0[$100]
 
 SECTION "Code", ROM0[$200]
 
+VBlankInterrupt:
+	call hUGE_dosound
+	reti
+
+StatInterrupt:
+	reti
+
 TimerInterrupt:
-	ld hl, $BEEF
 	reti
 
 ; Basic memcpy
@@ -37,7 +51,21 @@ memcpy:
 	jp nz, memcpy
 	ret
 
+; Set [de] to a for bc bytes
+memset:
+	ld [de], a
+	inc de
+	dec bc
+	ld a, b
+	or a, c
+	jp nz, memset
+	ret
+
 EntryPoint:
+	; Disable audio
+	ld a, AUDENA_OFF
+	ld [rAUDENA], a
+
 WaitForVBlank:
 	; Wait until we're in the VBlank period (scanline 144)
 	ld a, [rLY]
@@ -45,9 +73,11 @@ WaitForVBlank:
 	jp nz, WaitForVBlank
 
 	; Turn off the LCD
-	ld a, [rLCDC]
-	or a, LCDCF_OFF 
+	ld a, LCDCF_OFF 
 	ld [rLCDC], a
+	
+	ld hl, sample_song
+	call hUGE_init
 
 	; We can load data into VRAM now
 	ld hl, tileset_scene1
@@ -55,19 +85,44 @@ WaitForVBlank:
 	ld de, $9000
 	call memcpy
 
-	ld a, %00000101
+	; Enable timer, VBlank, stat interrupts
+	ld a, IEF_TIMER | IEF_VBLANK | IEF_STAT
+	ld [rIE], a
+
+	; Set timer control values
+	ld a, TACF_START | TACF_4KHZ
 	ld [rTAC], a
 
-	ei ; turn on interrupts
-	nop
+	ld a, STATF_LYC
+	ld [rSTAT], a
+
+	ld a, 72
+	ld [rLYC], a
+
+	; Enable audio, crank the volume
+	ld a, AUDENA_ON
+	ld [rAUDENA], a
+	ld a, $FF
+	ld [rAUDTERM], a
+	ld a, $77
+	ld [rAUDVOL], a
+
+	; Clear BG map
+	ld a, 0
+	ld de, $9800
+	ld bc, $9BFF - $9800
+	;call memset
 
 	; Turn the LCD back on, and set addresses for tile data
 	ld a, LCDCF_ON | LCDCF_BGON
 	ld [rLCDC], a
 
-	jr @
+	ei ; turn on interrupts
 
-SECTION "Data", ROM0[$3000]
+.loop
+	jp .loop
+
+SECTION "Data", ROM0[$2000]
 
 tileset_scene1:
 INCBIN "res/tileset_scene1.2bpp"
