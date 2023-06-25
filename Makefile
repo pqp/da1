@@ -86,7 +86,7 @@ VPATH := src
 
 res/%.2bpp: res/%.png
 	@$(MKDIR_P) $(@D)
-	$(RGBGFX) -o $@ $<
+	$(RGBGFX) -u -o $@ $<
 
 # Define how to compress files using the PackBits16 codec
 # Compressor script requires Python 3
