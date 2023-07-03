@@ -88,6 +88,14 @@ res/%.2bpp: res/%.png
 	@$(MKDIR_P) $(@D)
 	$(RGBGFX) -u -o $@ $<
 
+res/%.map: res/%.png
+	@$(MKDIR_P) $(@D)
+	$(RGBGFX) -u -t $@ $<
+
+res/%.pal: res/%.png
+	@$(MKDIR_P) $(@D)
+	$(RGBGFX) -p $@ $<
+
 # Define how to compress files using the PackBits16 codec
 # Compressor script requires Python 3
 res/%.pb16: src/tools/pb16.py res/%

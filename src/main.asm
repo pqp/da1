@@ -1,6 +1,10 @@
 include "hardware.inc"
 include "charmap.inc"
 
+DEF TMP EQU $C0B0
+DEF StatVector EQU $C0B4
+DEF ScrollerX EQU $C0C0
+
 SECTION "VBlank Interrupt Vector", ROM0[$0040]
 	
 	jp VBlankInterrupt
@@ -31,14 +35,46 @@ SECTION "Header", ROM0[$100]
 SECTION "Code", ROM0[$200]
 
 VBlankInterrupt:
-	;call hUGE_dosound
+	call hUGE_dosound
 
-	ld a, [rSCX]
-	inc a
-	ld [rSCX], a
 	reti
 
+SwapJump:
+	ld a, l
+	ld [StatVector], a
+	ld a, h
+	ld [StatVector+1], a
+	ret
+
 StatInterrupt:
+	ld a, [StatVector]
+	ld l, a
+	ld a, [StatVector+1]
+	ld h, a
+	jp hl
+
+Stat1:
+	ld hl, Stat2
+	call SwapJump
+
+	ld a, [ScrollerX]
+	inc a
+	ld [ScrollerX], a
+	ld [rSCX], a
+
+	ld a, 104
+	ld [rLYC], a
+	reti
+
+Stat2:
+	ld hl, Stat1
+	call SwapJump
+
+	ld a, $00
+	ld [rSCX], a
+
+	ld a, 95
+	ld [rLYC], a
 	reti
 
 TimerInterrupt:
@@ -47,8 +83,8 @@ TimerInterrupt:
 ; Basic memcpy
 ; Doesn't check for VBlank
 memcpy:
-	ld a, [hli]
-	ld [de], a
+	ld a, [de]
+	ld [hli], a
 	inc de
 	dec bc
 	ld a, b
@@ -56,14 +92,52 @@ memcpy:
 	jp nz, memcpy
 	ret
 
-; Set [de] to a for bc bytes
+memcpy_scrn:
+	ld a, [de]
+	ld [hli], a
+	inc de
+	dec bc
+	; test total byte count
+	ld a, b
+	or a, c
+	jp z, .done
+	; Decrement x-coord
+	ld a, [TMP]
+	dec a
+	ld [TMP], a
+	; Are we past x-coord 19?
+	cp a, 0
+	jp nz, memcpy_scrn
+.reset:
+	ld a, b
+	ld [TMP], a
+	ld a, c
+	ld [TMP+1], a
+
+	; add $20 to destination address (so it skips to the next row)
+	ld bc, 12 
+	add hl, bc
+
+	; load total byte count into BC
+	ld a, [TMP]
+	ld b, a
+	ld a, [TMP+1]
+	ld c, a
+	; reset local byte count to 19
+	ld a, 20
+	ld [TMP], a
+	jp memcpy_scrn
+.done:
+	ret
+
+; Set [hl] to a for bc bytes
 memset:
-	ld [de], a
+	ld [hli], a
+	ld d, a
 	dec bc
 	ld a, b
 	or a, c
-	ld a, [de]
-	inc de
+	ld a, d
 	jp nz, memset
 	ret
 
@@ -109,9 +183,14 @@ Init:
 	call hUGE_init
 
 	; We can load data into VRAM now
-	ld hl, carnival_ase
-	ld bc, carnival_ase_end - carnival_ase
-	ld de, $8800
+	ld de, carnival_ase_1
+	ld bc, carnival_ase_1_end - carnival_ase_1
+	ld hl, $9000
+	call memcpy
+
+	ld de, carnival_ase_2
+	ld bc, carnival_ase_2_end - carnival_ase_2
+	ld hl, $8800
 	call memcpy
 
 	; Load the same data into the Sprite Tiles Table
@@ -120,9 +199,9 @@ Init:
 	;ld de, $8000
 	;call memcpy
 
-	ld hl, charset
+	ld de, charset
 	ld bc, charset_end - charset
-	ld de, $9000
+	ld hl, $8B00
 	call memcpy
 
 	; Enable timer, VBlank, stat interrupts
@@ -141,34 +220,58 @@ Init:
 	ld a, $77
 	ld [rAUDVOL], a
 
-	ld de, _HRAM
+	ld hl, _HRAM
 	ld bc, Run_DMA_end - Run_DMA
-	ld hl, Run_DMA
+	ld de, Run_DMA
 	call memcpy
 
 	; Clear BG map
 	ld a, 0
-	ld de, $9800
+	ld hl, $9800
 	ld bc, $9BFF - $9800
 	call memset
 
 	ld a, 0
-	ld de, _OAMRAM
+	ld hl, _OAMRAM
 	ld bc, $FE9F - $FE00
 	call memset
 
-	ld de, $9800
-	ld bc, 38
+	ld a, 20
+	ld [TMP], a
+	ld hl, $9800
+	ld bc, carnival_ase_tilemap_end - carnival_ase_tilemap
+	ld de, carnival_ase_tilemap
+	call memcpy_scrn
+
+	ld de, $9980
+	ld bc, 17
 	ld hl, test_string
 	call PrintString
 
 	; initialize the palette
-	ld a, %11100100
+	ld a, %00011011
+	;ld a, %11100100
 	ld [rBGP], a
+
+	; write address of first stat interrupt routine to StatVector
+	ld a, LOW(Stat1)
+	ld [StatVector], a
+	ld a, HIGH(Stat1)
+	ld [StatVector+1], a
+
+	ld a, 0
+	ld [ScrollerX], a
 
 	; Turn the LCD back on, and set addresses for tile data
 	ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON
 	ld [rLCDC], a
+
+	; enable LYC=LY STAT interrupt source and LYC=LY flag
+	ld a, STATF_LYC | STATF_LYCF
+	ld [rSTAT], a
+
+	ld a, 95
+	ld [rLYC], a
 
 	; Clear any pending interrupts
 	ld a, 0
@@ -177,6 +280,7 @@ Init:
 	ei ; turn on interrupts
 
 .loop
+	halt
 	jp .loop
 
 Run_DMA:
@@ -192,7 +296,7 @@ Run_DMA_end:
 SECTION "Data", ROM0[$2000]
 
 test_string:
-db "Hello. This is a test string. Goodbye!~"
+db "HELLO TEST STRING"
 
 sine_table:
 ; Generate a 256-byte sine table with values in the range [0, 128]
@@ -204,10 +308,22 @@ ANGLE = ANGLE + 256.0 ; 256.0 = 65536 degrees / 256 entries
     ENDR
 sine_table_end:
 
-carnival_ase:
-INCBIN "res/carnival_ase.2bpp"
-carnival_ase_end:
+carnival_ase_1:
+INCBIN "res/carnival_ase.2bpp",0,2048
+carnival_ase_1_end:
+
+carnival_ase_2:
+INCBIN "res/carnival_ase.2bpp",2048
+carnival_ase_2_end:
+
+carnival_ase_palette:
+INCBIN "res/carnival_ase.pal"
+carnival_ase_palette_end:
+
+carnival_ase_tilemap:
+INCBIN "res/carnival_ase.map"
+carnival_ase_tilemap_end:
 
 charset:
-INCBIN "res/charset.2bpp"
+INCBIN "res/charset.2bpp",512
 charset_end:
