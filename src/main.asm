@@ -3,7 +3,11 @@ include "charmap.inc"
 
 DEF TMP EQU $C0B0
 DEF StatVector EQU $C0B4
-DEF ScrollerX EQU $C0C0
+DEF TextX EQU $C0C0
+DEF TextY EQU $C0C1
+DEF ScrollerX EQU $C0D0
+DEF ScrollerText EQU $C0E0
+DEF ScrollText EQU $C120
 
 SECTION "VBlank Interrupt Vector", ROM0[$0040]
 	
@@ -35,8 +39,15 @@ SECTION "Header", ROM0[$100]
 SECTION "Code", ROM0[$200]
 
 VBlankInterrupt:
-	call hUGE_dosound
+	ld de, $9980
+	ld bc, 49
+	ld hl, ScrollerText
+	call PrintString
 
+	; take off-screen character, move it to last byte of the string
+	; shift the rest of the characters left by one byte
+	call hUGE_dosound
+.done:
 	reti
 
 SwapJump:
@@ -62,6 +73,26 @@ Stat1:
 	ld [ScrollerX], a
 	ld [rSCX], a
 
+	; code below is using too many cycles
+.modulo8
+	sub a, 8
+	jp .checkLessThanOrEqualToZero
+
+.checkLessThanOrEqualToZero:
+	jp c, .nextLine
+	cp a, 0
+	jp z, .swapCharacters
+	jp .modulo8
+
+.swapCharacters:
+	ld a, 1
+	ld [ScrollText], a ; toggle scroller update in VBlank interrupt
+
+	ld a, 0
+	ld [ScrollerX], a
+	ld [rSCX], a
+
+.nextLine:
 	ld a, 104
 	ld [rLYC], a
 	reti
@@ -70,7 +101,7 @@ Stat2:
 	ld hl, Stat1
 	call SwapJump
 
-	ld a, $00
+	ld a, $00 ; don't scroll anything other than the text
 	ld [rSCX], a
 
 	ld a, 95
@@ -150,6 +181,11 @@ OAM_Move:
 	ret
 
 PrintString:
+	ld a, e
+	ld [TMP], a
+	cp a, $93
+	jp z, .done
+
 	ld a, [hli]
 	ld [de], a
 	inc de
@@ -157,6 +193,7 @@ PrintString:
 	ld a, b
 	or a, c
 	jp nz, PrintString
+.done:
 	ret	
 
 TransitionScene:
@@ -243,9 +280,14 @@ Init:
 	ld de, carnival_ase_tilemap
 	call memcpy_scrn
 
+	ld hl, ScrollerText
+	ld de, test_string
+	ld bc, 49
+	call memcpy
+
 	ld de, $9980
-	ld bc, 17
-	ld hl, test_string
+	ld bc, 49
+	ld hl, ScrollerText
 	call PrintString
 
 	; initialize the palette
@@ -261,6 +303,7 @@ Init:
 
 	ld a, 0
 	ld [ScrollerX], a
+	ld [ScrollText], a
 
 	; Turn the LCD back on, and set addresses for tile data
 	ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON
@@ -280,6 +323,35 @@ Init:
 	ei ; turn on interrupts
 
 .loop
+	ld a, [ScrollText]
+	cp a, 0
+	jp z, .done
+
+	di
+
+	ld hl, ScrollerText
+	ld a, [hl]
+	ld [TMP], a
+.swap:
+	inc hl
+	ld a, [hl] ; read next character
+	cp a, 255
+	jp z, .end ; if we're at the end of the string, set up next stat interrupt
+	dec hl
+	ld [hl], a ; swap it with previous location
+	inc hl
+	jp .swap
+.end:
+	dec hl
+	ld a, [TMP]
+	ld [hl], a
+
+	; don't update scroller until modulo 8
+	ld a, 0
+	ld [ScrollText], a
+
+.done:
+	ei
 	halt
 	jp .loop
 
@@ -296,7 +368,7 @@ Run_DMA_end:
 SECTION "Data", ROM0[$2000]
 
 test_string:
-db "HELLO TEST STRING"
+db " Hello world. This is a test string. It is long.~"
 
 sine_table:
 ; Generate a 256-byte sine table with values in the range [0, 128]
