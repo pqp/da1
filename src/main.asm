@@ -3,11 +3,13 @@ include "charmap.inc"
 
 DEF TMP EQU $C0B0
 DEF StatVector EQU $C0B4
-DEF TextX EQU $C0C0
-DEF TextY EQU $C0C1
 DEF ScrollerX EQU $C0D0
+DEF SCX EQU $C0D1
 DEF ScrollerText EQU $C0E0
 DEF ScrollText EQU $C120
+DEF ScrollerOffset EQU $C130
+DEF ScrollerNewChar EQU $C140
+DEF TextLen EQU 49
 
 SECTION "VBlank Interrupt Vector", ROM0[$0040]
 	
@@ -39,15 +41,41 @@ SECTION "Header", ROM0[$100]
 SECTION "Code", ROM0[$200]
 
 VBlankInterrupt:
-	ld de, $9980
-	ld bc, 49
-	ld hl, ScrollerText
-	call PrintString
+	ld a, [ScrollText]
+	cp a, 1
+	jp nz, .VBlankEnd
+
+	ld hl, $9980
+	ld a, [hl]
+	ld [TMP], a
+.swap:
+	inc hl
+	ld a, [hl]
+	dec hl
+	ld [hl], a
+	ld a, $94
+	cp a, l
+	jp z, .swappingDone
+	inc hl
+	jp .swap
+
+.swappingDone:	
+	; disable swapping until 8 pixels are scrolled again
+	ld hl, $9994
+	ld a, [ScrollerNewChar]
+	ld [hl], a
+
+	ld a, [ScrollerOffset]
+	inc a
+	ld [ScrollerOffset], a
+
+	ld a, 0
+	ld [ScrollText], a
 
 	; take off-screen character, move it to last byte of the string
 	; shift the rest of the characters left by one byte
+.VBlankEnd:
 	call hUGE_dosound
-.done:
 	reti
 
 SwapJump:
@@ -68,21 +96,20 @@ Stat1:
 	ld hl, Stat2
 	call SwapJump
 
+	ld a, [SCX]
+	inc a
+	ld [SCX], a
+
 	ld a, [ScrollerX]
 	inc a
 	ld [ScrollerX], a
 	ld [rSCX], a
 
-	; code below is using too many cycles
-.modulo8
-	sub a, 8
-	jp .checkLessThanOrEqualToZero
-
-.checkLessThanOrEqualToZero:
-	jp c, .nextLine
-	cp a, 0
+	cp a, 8
 	jp z, .swapCharacters
-	jp .modulo8
+	jp .nextLine
+
+    ; if SCX = 8, then set it to 0 and swap characters
 
 .swapCharacters:
 	ld a, 1
@@ -90,7 +117,6 @@ Stat1:
 
 	ld a, 0
 	ld [ScrollerX], a
-	ld [rSCX], a
 
 .nextLine:
 	ld a, 104
@@ -183,7 +209,7 @@ OAM_Move:
 PrintString:
 	ld a, e
 	ld [TMP], a
-	cp a, $93
+	cp a, $94
 	jp z, .done
 
 	ld a, [hli]
@@ -257,6 +283,7 @@ Init:
 	ld a, $77
 	ld [rAUDVOL], a
 
+	; Copy OAM DMA copying routine into HRAM
 	ld hl, _HRAM
 	ld bc, Run_DMA_end - Run_DMA
 	ld de, Run_DMA
@@ -268,11 +295,13 @@ Init:
 	ld bc, $9BFF - $9800
 	call memset
 
+	; Clear OAM
 	ld a, 0
 	ld hl, _OAMRAM
 	ld bc, $FE9F - $FE00
 	call memset
 
+	; copy title screen tilemap into memory, taking screen specs into account
 	ld a, 20
 	ld [TMP], a
 	ld hl, $9800
@@ -280,14 +309,9 @@ Init:
 	ld de, carnival_ase_tilemap
 	call memcpy_scrn
 
-	ld hl, ScrollerText
-	ld de, test_string
-	ld bc, 49
-	call memcpy
-
 	ld de, $9980
-	ld bc, 49
-	ld hl, ScrollerText
+	ld bc, TextLen
+	ld hl, test_string
 	call PrintString
 
 	; initialize the palette
@@ -303,7 +327,12 @@ Init:
 
 	ld a, 0
 	ld [ScrollerX], a
+	ld [SCX], a
 	ld [ScrollText], a
+
+	; TODO: actually calculate the offset
+	ld a, 21
+	ld [ScrollerOffset], a
 
 	; Turn the LCD back on, and set addresses for tile data
 	ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON
@@ -323,35 +352,23 @@ Init:
 	ei ; turn on interrupts
 
 .loop
-	ld a, [ScrollText]
-	cp a, 0
-	jp z, .done
-
-	di
-
-	ld hl, ScrollerText
+	; get new character for scroller ready
+	ld hl, test_string
+	ld a, [ScrollerOffset]
+	ld b, 0
+	ld c, a
+	add hl, bc
 	ld a, [hl]
-	ld [TMP], a
-.swap:
-	inc hl
-	ld a, [hl] ; read next character
 	cp a, 255
-	jp z, .end ; if we're at the end of the string, set up next stat interrupt
-	dec hl
-	ld [hl], a ; swap it with previous location
-	inc hl
-	jp .swap
-.end:
-	dec hl
-	ld a, [TMP]
-	ld [hl], a
+	jp z, .endOfString
+	ld [ScrollerNewChar], a
+	jp .done
 
-	; don't update scroller until modulo 8
+.endOfString:
 	ld a, 0
-	ld [ScrollText], a
+	ld [ScrollerOffset], a
 
 .done:
-	ei
 	halt
 	jp .loop
 
@@ -368,7 +385,7 @@ Run_DMA_end:
 SECTION "Data", ROM0[$2000]
 
 test_string:
-db " Hello world. This is a test string. It is long.~"
+db "Hello world. This is a test string. It is long. ~"
 
 sine_table:
 ; Generate a 256-byte sine table with values in the range [0, 128]
