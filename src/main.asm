@@ -4,10 +4,8 @@ include "charmap.inc"
 DEF TMP EQU $C0B0
 DEF StatVector EQU $C0B4
 DEF ScrollerX EQU $C0D0
-DEF SCX EQU $C0D1
-DEF ScrollerText EQU $C0E0
-DEF ScrollText EQU $C120
-DEF ScrollerOffset EQU $C130
+DEF ScrollerSwapOn EQU $C120
+DEF ScrollerStringOffset EQU $C130
 DEF ScrollerNewChar EQU $C140
 DEF TextLen EQU 49
 
@@ -41,44 +39,46 @@ SECTION "Header", ROM0[$100]
 SECTION "Code", ROM0[$200]
 
 VBlankInterrupt:
-	ld a, [ScrollText]
+	; Are we updating the text in VRAM?
+	ld a, [ScrollerSwapOn]
 	cp a, 1
-	jp nz, .VBlankEnd
+	jp nz, .VBlankEnd ; if not, bounce
 
-	ld hl, $9980
-	ld a, [hl]
-	ld [TMP], a
+
+	ld hl, $9980 ; where the scroller is located in VRAM
 .swap:
-	inc hl
-	ld a, [hl]
+	inc hl  
+	ld a, [hl] ; get next character tile
 	dec hl
-	ld [hl], a
-	ld a, $94
-	cp a, l
-	jp z, .swappingDone
-	inc hl
+	ld [hl], a ; swap it with the previous character tile
+	ld a, $94 
+	cp a, l ; are we past the screen?
+	jp z, .swappingDone ; if so, stop swapping
+	inc hl ; otherwise, move to the next character and swap again
 	jp .swap
 
 .swappingDone:	
-	; disable swapping until 8 pixels are scrolled again
+	; now that we're done exchanging tiles already visible on 
+	; the screen, let's get the next character tile ready
 	ld hl, $9994
-	ld a, [ScrollerNewChar]
-	ld [hl], a
+	ld a, [ScrollerNewChar]  
+	ld [hl], a ; write the next character just outside the visible area of the tilemap
 
-	ld a, [ScrollerOffset]
-	inc a
-	ld [ScrollerOffset], a
+	; this new character will eventually scroll into view
 
+	ld a, [ScrollerStringOffset]
+	inc a ; increment our position in the string, so we grab the next character in memory
+	ld [ScrollerStringOffset], a
+
+	; toggle the scroller swapping off until the region has scrolled another 8 pixels
 	ld a, 0
-	ld [ScrollText], a
+	ld [ScrollerSwapOn], a
 
-	; take off-screen character, move it to last byte of the string
-	; shift the rest of the characters left by one byte
 .VBlankEnd:
-	call hUGE_dosound
+	call hUGE_dosound ; keep the song playing
 	reti
 
-SwapJump:
+WriteStatVector:
 	ld a, l
 	ld [StatVector], a
 	ld a, h
@@ -92,53 +92,53 @@ StatInterrupt:
 	ld h, a
 	jp hl
 
+; this interrupt routine is run if we are at LY=95
+; (where the scroller is)
 Stat1:
-	ld hl, Stat2
-	call SwapJump
 
-	ld a, [SCX]
-	inc a
-	ld [SCX], a
-
+	; scroll the text scroller region by a pixel
 	ld a, [ScrollerX]
 	inc a
 	ld [ScrollerX], a
 	ld [rSCX], a
 
+	; has the scroller scrolled by 8 pixels?
 	cp a, 8
-	jp z, .swapCharacters
-	jp .nextLine
-
-    ; if SCX = 8, then set it to 0 and swap characters
+	jp z, .swapCharacters ; if so, toggle character swapping on
+	jp .setup ; otherwise, set up the STAT interrupt for the end of this region
 
 .swapCharacters:
 	ld a, 1
-	ld [ScrollText], a ; toggle scroller update in VBlank interrupt
+	ld [ScrollerSwapOn], a ; toggle scroller update in VBlank interrupt
 
 	ld a, 0
-	ld [ScrollerX], a
+	ld [ScrollerX], a ; clear scroll x-coord 
 
-.nextLine:
+.setup:
+	; the next interrupt routine will trigger when LY=104
 	ld a, 104
 	ld [rLYC], a
+
+	ld hl, Stat2
+	call WriteStatVector
 	reti
 
 Stat2:
-	ld hl, Stat1
-	call SwapJump
-
 	ld a, $00 ; don't scroll anything other than the text
 	ld [rSCX], a
 
+	; the previous interrupt routine will trigger when LY=95 again
 	ld a, 95
 	ld [rLYC], a
+
+	ld hl, Stat1
+	call WriteStatVector
 	reti
 
 TimerInterrupt:
 	reti
 
-; Basic memcpy
-; Doesn't check for VBlank
+; Basic, naive memcpy
 memcpy:
 	ld a, [de]
 	ld [hli], a
@@ -256,12 +256,6 @@ Init:
 	ld hl, $8800
 	call memcpy
 
-	; Load the same data into the Sprite Tiles Table
-	;ld hl, tileset_scene1
-	;ld bc, tileset_scene1_end - tileset_scene1
-	;ld de, $8000
-	;call memcpy
-
 	ld de, charset
 	ld bc, charset_end - charset
 	ld hl, $8B00
@@ -309,6 +303,7 @@ Init:
 	ld de, carnival_ase_tilemap
 	call memcpy_scrn
 
+	; draw the test string
 	ld de, $9980
 	ld bc, TextLen
 	ld hl, test_string
@@ -327,12 +322,11 @@ Init:
 
 	ld a, 0
 	ld [ScrollerX], a
-	ld [SCX], a
-	ld [ScrollText], a
+	ld [ScrollerSwapOn], a
 
 	; TODO: actually calculate the offset
 	ld a, 21
-	ld [ScrollerOffset], a
+	ld [ScrollerStringOffset], a
 
 	; Turn the LCD back on, and set addresses for tile data
 	ld a, LCDCF_ON | LCDCF_BGON | LCDCF_OBJON
@@ -351,10 +345,16 @@ Init:
 
 	ei ; turn on interrupts
 
-.loop
+.loop:
+	ld a, [ScrollerSwapOn]
+	cp a, 1
+	jp z, .swap
+	jp .done
+
+.swap:
 	; get new character for scroller ready
 	ld hl, test_string
-	ld a, [ScrollerOffset]
+	ld a, [ScrollerStringOffset]
 	ld b, 0
 	ld c, a
 	add hl, bc
@@ -366,7 +366,7 @@ Init:
 
 .endOfString:
 	ld a, 0
-	ld [ScrollerOffset], a
+	ld [ScrollerStringOffset], a
 
 .done:
 	halt
@@ -387,6 +387,7 @@ SECTION "Data", ROM0[$2000]
 test_string:
 db "Hello world. This is a test string. It is long. ~"
 
+; swiped from the RGBDS docs
 sine_table:
 ; Generate a 256-byte sine table with values in the range [0, 128]
 ; (shifted and scaled from the range [-1.0, 1.0])
