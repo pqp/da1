@@ -2,7 +2,9 @@ include "hardware.inc"
 include "charmap.inc"
 
 DEF TMP EQU $C0B0
+DEF VBlankVector EQU $C0B2
 DEF StatVector EQU $C0B4
+DEF TimerVector EQU $C0B6
 DEF ScrollerX EQU $C0D0
 DEF ScrollerSwapOn EQU $C120
 DEF ScrollerStringOffset EQU $C130
@@ -36,14 +38,28 @@ SECTION "Header", ROM0[$100]
 	; introduced in that version.)
 	ds $150 - @, 0
 
-SECTION "Code", ROM0[$200]
+SECTION "Main", ROM0[$200]
+
+WriteVector:
+	ld a, l
+	ld [de], a
+	ld a, h
+	inc de
+	ld [de], a
+	ret
 
 VBlankInterrupt:
+	ld a, [VBlankVector]
+	ld l, a
+	ld a, [VBlankVector+1]
+	ld h, a
+	jp hl
+
+VBlank1:
 	; Are we updating the text in VRAM?
 	ld a, [ScrollerSwapOn]
 	cp a, 1
 	jp nz, .VBlankEnd ; if not, bounce
-
 
 	ld hl, $9980 ; where the scroller is located in VRAM
 .swap:
@@ -77,13 +93,6 @@ VBlankInterrupt:
 .VBlankEnd:
 	call hUGE_dosound ; keep the song playing
 	reti
-
-WriteStatVector:
-	ld a, l
-	ld [StatVector], a
-	ld a, h
-	ld [StatVector+1], a
-	ret
 
 StatInterrupt:
 	ld a, [StatVector]
@@ -119,8 +128,9 @@ Stat1:
 	ld a, 104
 	ld [rLYC], a
 
+	ld de, StatVector
 	ld hl, Stat2
-	call WriteStatVector
+	call WriteVector
 	reti
 
 Stat2:
@@ -131,11 +141,21 @@ Stat2:
 	ld a, 95
 	ld [rLYC], a
 
+	ld de, StatVector
 	ld hl, Stat1
-	call WriteStatVector
+	call WriteVector
 	reti
 
 TimerInterrupt:
+	ld a, [TimerVector]
+	ld l, a
+	ld a, [TimerVector+1]
+	ld h, a
+	jp hl
+
+	reti
+
+Timer1:
 	reti
 
 ; Basic, naive memcpy
@@ -245,6 +265,8 @@ Init:
 	ld hl, sample_song
 	call hUGE_init
 
+	call IntroInit
+
 	; We can load data into VRAM now
 	ld de, carnival_ase_1
 	ld bc, carnival_ase_1_end - carnival_ase_1
@@ -311,7 +333,6 @@ Init:
 
 	; initialize the palette
 	ld a, %00011011
-	;ld a, %11100100
 	ld [rBGP], a
 
 	; write address of first stat interrupt routine to StatVector
@@ -319,6 +340,16 @@ Init:
 	ld [StatVector], a
 	ld a, HIGH(Stat1)
 	ld [StatVector+1], a
+
+	ld a, LOW(VBlank1)
+	ld [VBlankVector], a
+	ld a, HIGH(VBlank1)
+	ld [VBlankVector+1], a
+
+	ld a, LOW(Timer1)
+	ld [TimerVector], a
+	ld a, HIGH(Timer1)
+	ld [TimerVector+1], a
 
 	ld a, 0
 	ld [ScrollerX], a
@@ -406,9 +437,11 @@ carnival_ase_2:
 INCBIN "res/carnival_ase.2bpp",2048
 carnival_ase_2_end:
 
+/*
 carnival_ase_palette:
 INCBIN "res/carnival_ase.pal"
 carnival_ase_palette_end:
+*/
 
 carnival_ase_tilemap:
 INCBIN "res/carnival_ase.map"
