@@ -1,12 +1,10 @@
-
 include "hardware.inc"
 include "charmap.inc"
 
 DEF ScrollerX EQU $C0D0
 DEF ScrollerSwapOn EQU $C120
-DEF ScrollerStringOffset EQU $C130
+DEF ScrollerStringIndex EQU $C130
 DEF ScrollerNewChar EQU $C140
-DEF TextLen EQU 49
 
 SECTION "Intro", ROM0[$1000]
 
@@ -60,14 +58,13 @@ IntroInit::
 	ld [ScrollerX], a
 	ld [ScrollerSwapOn], a
 
-	; TODO: actually calculate the offset
-	ld a, 21
-	ld [ScrollerStringOffset], a
+	ld a, SCRN_X_B + 1 ; width of screen in tiles + 1
+	ld [ScrollerStringIndex], a
 
 	; draw the test string
 	ld de, $9980
-	ld bc, TextLen
-	ld hl, test_string
+	ld bc, intro_string_len
+	ld hl, intro_string
 	call PrintString
     ret
 
@@ -85,7 +82,6 @@ PrintString:
 	or a, c
 	jp nz, PrintString
 .done:
-	
 
 VBlank1:
 	; Are we updating the text in VRAM?
@@ -114,9 +110,9 @@ VBlank1:
 
 	; this new character will eventually scroll into view
 
-	ld a, [ScrollerStringOffset]
+	ld a, [ScrollerStringIndex]
 	inc a ; increment our position in the string, so we grab the next character in memory
-	ld [ScrollerStringOffset], a
+	ld [ScrollerStringIndex], a
 
 	; toggle the scroller swapping off until the region has scrolled another 8 pixels
 	ld a, 0
@@ -154,7 +150,7 @@ Stat1:
 
 	ld de, StatVector
 	ld hl, Stat2
-	call WriteVector
+	WriteVector
 	reti
 
 Stat2:
@@ -167,7 +163,7 @@ Stat2:
 
 	ld de, StatVector
 	ld hl, Stat1
-	call WriteVector
+	WriteVector
 	reti
 
 Timer1:
@@ -181,8 +177,8 @@ IntroLoop:
 
 .swap:
 	; get new character for scroller ready
-	ld hl, test_string
-	ld a, [ScrollerStringOffset]
+	ld hl, intro_string
+	ld a, [ScrollerStringIndex]
 	ld b, 0
 	ld c, a
 	add hl, bc
@@ -194,17 +190,21 @@ IntroLoop:
 
 .endOfString:
 	ld a, 0
-	ld [ScrollerStringOffset], a
+	ld [ScrollerStringIndex], a
 
 .done:
 	halt
 	jp IntroLoop
 
-    SECTION "Data", ROM0[$2000]
+SECTION "Data", ROM0[$2000]
 
-test_string:
-db "Hello world. This is a test string. It is long. ~"
-    
+DEF intro_string_def EQUS "\"Hello world. This is a test string. It is long. Hoo boy is it long. It is so long. Gosh it has a length. I mean really. ~\""
+
+intro_string:
+	db intro_string_def
+intro_string_len:
+	db STRLEN(intro_string_def)
+
 ; swiped from the RGBDS docs
 sine_table:
 ; Generate a 256-byte sine table with values in the range [0, 128]

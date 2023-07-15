@@ -38,15 +38,9 @@ SECTION "Header", ROM0[$100]
 
 SECTION "Main", ROM0[$200]
 
-WriteVector::
-	ld a, l
-	ld [de], a
-	ld a, h
-	inc de
-	ld [de], a
-	ret
-
 VBlankInterrupt:
+	di
+
 	ld a, [VBlankVector]
 	ld l, a
 	ld a, [VBlankVector+1]
@@ -54,6 +48,8 @@ VBlankInterrupt:
 	jp hl
 
 StatInterrupt:
+	di
+
 	ld a, [StatVector]
 	ld l, a
 	ld a, [StatVector+1]
@@ -61,12 +57,18 @@ StatInterrupt:
 	jp hl
 
 TimerInterrupt:
+	di
+
 	ld a, [TimerVector]
 	ld l, a
 	ld a, [TimerVector+1]
 	ld h, a
 	jp hl
 
+	reti
+
+TransitionVBlank:
+	call hUGE_dosound	
 	reti
 
 ; Basic, naive memcpy
@@ -136,8 +138,6 @@ OAM_Move:
 	ld a, c
 	ld [de], a
 	ret
-
-
 
 EntryPoint:
 	; Disable audio
@@ -216,7 +216,7 @@ Init:
 
 	ei ; turn on interrupts
 
-.loop:
+MainLoop::
 	ld a, [Loop]
 	ld l, a
 	ld a, [Loop+1]

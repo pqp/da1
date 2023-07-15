@@ -90,3 +90,11 @@ charmap "å", 240
 charmap "ä", 241
 charmap "ö", 242
 charmap "~", 255
+
+MACRO WriteVector
+	ld a, l
+	ld [de], a
+	ld a, h
+	inc de
+	ld [de], a
+ENDM
