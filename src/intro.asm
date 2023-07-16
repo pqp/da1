@@ -1,14 +1,19 @@
 include "hardware.inc"
 include "charmap.inc"
+include "macros.inc"
 
 DEF ScrollerX EQU $C0D0
 DEF ScrollerSwapOn EQU $C120
 DEF ScrollerStringIndex EQU $C130
 DEF ScrollerNewChar EQU $C140
+DEF TimerCounter EQU $C200
 
 SECTION "Intro", ROM0[$1000]
 
 IntroInit::
+	ld a, 0
+	ld [TimerCounter], a
+
 	; We can load data into VRAM now
 	ld de, carnival_ase_1
 	ld bc, carnival_ase_1_end - carnival_ase_1
@@ -20,9 +25,9 @@ IntroInit::
 	ld hl, $8800
 	call memcpy
 
+	; keep the value of HL and write the charset right after the last tileset
 	ld de, charset
 	ld bc, charset_end - charset
-	ld hl, $8B00
 	call memcpy
 
 	; copy title screen tilemap into memory, taking screen specs into account
@@ -33,26 +38,11 @@ IntroInit::
 	ld de, carnival_ase_tilemap
 	call memcpy_scrn
 
-    ld a, LOW(IntroLoop)
-    ld [Loop], a
-    ld a, HIGH(IntroLoop)
-    ld [Loop+1], a
-
-	; write address of first stat interrupt routine to StatVector
-	ld a, LOW(Stat1)
-	ld [StatVector], a
-	ld a, HIGH(Stat1)
-	ld [StatVector+1], a
-
-	ld a, LOW(VBlank1)
-	ld [VBlankVector], a
-	ld a, HIGH(VBlank1)
-	ld [VBlankVector+1], a
-
-	ld a, LOW(Timer1)
-	ld [TimerVector], a
-	ld a, HIGH(Timer1)
-	ld [TimerVector+1], a
+	; Write vectors for loop, and stat, vblank, and timer interrupts
+	WriteAddress IntroLoop, Loop
+	WriteAddress Stat1, StatVector
+	WriteAddress VBlank1, VBlankVector
+	WriteAddress Timer1, TimerVector
 
 	ld a, 0
 	ld [ScrollerX], a
@@ -71,7 +61,7 @@ IntroInit::
 PrintString:
 	ld a, e
 	ld [TMP], a
-	cp a, $94
+	cp a, $95
 	jp z, .done
 
 	ld a, [hli]
@@ -167,6 +157,16 @@ Stat2:
 	reti
 
 Timer1:
+	ld a, [TimerCounter]
+	inc a
+	ld [TimerCounter], a
+
+	cp 255
+	jp z, TransitionScene
+	reti
+
+TransitionScene:
+	call Scene1Init
 	reti
 
 IntroLoop:
@@ -195,45 +195,3 @@ IntroLoop:
 .done:
 	halt
 	jp IntroLoop
-
-SECTION "Data", ROM0[$2000]
-
-DEF intro_string_def EQUS "\"Hello world. This is a test string. It is long. Hoo boy is it long. It is so long. Gosh it has a length. I mean really. ~\""
-
-intro_string:
-	db intro_string_def
-intro_string_len:
-	db STRLEN(intro_string_def)
-
-; swiped from the RGBDS docs
-sine_table:
-; Generate a 256-byte sine table with values in the range [0, 128]
-; (shifted and scaled from the range [-1.0, 1.0])
-ANGLE = 0.0
-    REPT 256
-        db (MUL(64.0, SIN(ANGLE)) + 64.0) >> 16
-ANGLE = ANGLE + 256.0 ; 256.0 = 65536 degrees / 256 entries
-    ENDR
-sine_table_end:
-
-carnival_ase_1:
-INCBIN "res/carnival_ase.2bpp",0,2048
-carnival_ase_1_end:
-
-carnival_ase_2:
-INCBIN "res/carnival_ase.2bpp",2048
-carnival_ase_2_end:
-
-/*
-carnival_ase_palette:
-INCBIN "res/carnival_ase.pal"
-carnival_ase_palette_end:
-*/
-
-carnival_ase_tilemap:
-INCBIN "res/carnival_ase.map"
-carnival_ase_tilemap_end:
-
-charset:
-INCBIN "res/charset.2bpp",512
-charset_end:
