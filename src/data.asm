@@ -1,6 +1,6 @@
 include "charmap.inc"
 
-SECTION "Data", ROM0[$2000]
+SECTION "Bank 0", ROM0[$2000]
 
 ;;;;
 ;;;; for intro.asm
@@ -45,3 +45,21 @@ carnival_ase_tilemap_end::
 charset::
 INCBIN "res/charset.2bpp",128
 charset_end::
+
+SECTION "Bank 1", ROMX
+
+;goat::
+;INCBIN "res/goat144_ase.2bpp"
+;goat_end::
+
+spiral1::
+INCBIN "res/spiraali.2bpp",0,2048
+spiral1_end::
+
+spiral2::
+INCBIN "res/spiraali.2bpp",2048
+spiral2_end::
+
+spiral_map::
+INCBIN "res/spiraali.map"
+spiral_map_end::

@@ -166,6 +166,12 @@ Timer1:
 	reti
 
 TransitionScene:
+	; change palette to black
+	; wait for vblank
+	; load new vram things
+	ld a, %00000000
+	ld [rBGP], a
+
 	call Scene1Init
 	reti
 

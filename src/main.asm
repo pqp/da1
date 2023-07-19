@@ -121,7 +121,7 @@ memcpy_scrn::
 	ret
 
 ; Set [hl] to a for bc bytes
-memset:
+memset::
 	ld [hli], a
 	ld d, a
 	dec bc
