@@ -161,7 +161,7 @@ Timer1:
 	inc a
 	ld [TimerCounter], a
 
-	cp 255
+	cp 20
 	jp z, TransitionScene
 	reti
 
@@ -169,8 +169,6 @@ TransitionScene:
 	; change palette to black
 	; wait for vblank
 	; load new vram things
-	ld a, %00000000
-	ld [rBGP], a
 
 	call Scene1Init
 	reti
