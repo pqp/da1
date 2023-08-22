@@ -6,8 +6,9 @@ DEF VBlankVector EQU $C0B2
 DEF StatVector EQU $C0B4
 DEF TimerVector EQU $C0B6
 DEF TMP EQU $C0C0
+DEF TMP2 EQU $C0C1
 
-EXPORT Loop, VBlankVector, StatVector, TimerVector, TMP
+EXPORT Loop, VBlankVector, StatVector, TimerVector, TMP, TMP2
 
 SECTION "VBlank Interrupt Vector", ROM0[$0040]
 	
@@ -98,7 +99,7 @@ memcpy_scrn::
 	; Are we past x-coord 19?
 	cp a, 0
 	jp nz, memcpy_scrn
-.reset:
+.nextRow:
 	; write 16-bit byte count to memory
 	ld a, b
 	ld [TMP], a
