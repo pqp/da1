@@ -13,6 +13,8 @@ DEF TempSrcAddress EQU $C0D0
 DEF TempDestAddress EQU $C0E0
 DEF DataLoaded EQU $C0F0
 
+DEF BYTES_PER_VBLANK EQU 8
+
 SECTION "Scene 1", ROM0[$1200]
 
 LoadingMemCpy:
@@ -24,13 +26,13 @@ LoadingMemCpy:
 
 .checkLeast:
     ld a, c
-    cp a, 16
+    cp a, BYTES_PER_VBLANK
     jp nz, .init ; if the value left is greater than 16, continue as usual
     ld a, 1 ; otherwise, indicate that this is the last byte for this chunk of data
     ld [DataLoaded], a
 
 .init:
-    ld a, 16
+    ld a, BYTES_PER_VBLANK
     ld [TMP], a
 
     ld a, [TempSrcAddress]
@@ -55,15 +57,8 @@ LoadingMemCpy:
     cp a, 0
     jp nz, .loop 
 
-    ld a, e
-    ld [TempSrcAddress], a
-    ld a, d
-    ld [TempSrcAddress+1], a
-
-    ld a, l
-    ld [TempDestAddress], a
-    ld a, h
-    ld [TempDestAddress+1], a
+    WriteTempSrcAddress
+    WriteTempDestAddress
 
     ret
 
@@ -115,18 +110,12 @@ Scene1Init::
     ; Get spiral1's address and write it to memory
     ld de, spiral1
 
-    ld a, e
-    ld [TempSrcAddress], a
-    ld a, d
-    ld [TempSrcAddress+1], a
+    WriteTempSrcAddress
 
     ; Get the VRAM dest address and write it to memory
     ld hl, $9000
     
-    ld a, l
-    ld [TempDestAddress], a
-    ld a, h
-    ld [TempDestAddress+1], a
+    WriteTempDestAddress
 
     ; reset the palette
 	;ld a, %00011011
@@ -140,67 +129,9 @@ Scene1Init::
 
     reti
 
-    /*
-    ld a, 16
-    ld [TMP], a
-    ld de, spiral1
-    ld a, [TransitionSpiral1Bytes]
-    ld c, a
-    ld a, [TransitionSpiral1Bytes+1]
-    ld b, a
-    ld hl, $9000
-    add hl, bc
-
-    call TransitionMemCopy
-
-    ; Update byte count in memory
-    ld a, c
-    ld [TransitionSpiral1Bytes], a
-    ld a, b
-    ld [TransitionSpiral1Bytes+1], a
-
-    ld a, b
-    or a, c
-    jp z, .Spiral1Done
-    jp .end
-*/
-
-    ; check transitionspiral1 bytes
-    ; is it zero? if so, we're done
-
-    ; when we've loaded 16 bytes
-    ; save the address we were reading from
-    ; save the address we were writing to
-    ; save the number of bytes left
-
-    /*
-    ; load tile data into VRAM
-    ld de, spiral1
-    ld bc, spiral1_end - spiral1
-    ld hl, $9000
-    call memcpy
-
-    ld a, l
-    ld [TransitionLoadAddress], a
-    ld a, h
-    ld [TransitionLoadAddress+1], a
-
-    ld de, spiral2
-    ld bc, spiral2_end - spiral2
-    ld hl, $8800
-    call memcpy
-
-	ld a, 20
-	ld [TMP], a
-    ld de, spiral_map
-    ld bc, spiral_map_end - spiral_map
-    ld hl, $9800
-    call memcpy_scrn
-    */
-
 ; temporary VBlank interrupt while we load data into VRAM
 VBlankLoad:
-    call hUGE_dosound
+    ;call hUGE_dosound
 
     ld a, [TransitionDone]
     cp a, 0
@@ -227,17 +158,11 @@ VBlankLoad:
     ; is spiral2 byte count zero? if so, check spiral_map bytes
     ; is spiral_map byte count zero? if so, then TransitionLoading should be 0
 
-    ld a, [TransitionSpiral1BytesLeft]
-    ld c, a
-    ld a, [TransitionSpiral1BytesLeft+1]
-    ld b, a
+    GetByteCount TransitionSpiral1BytesLeft
 
     call LoadingMemCpy
 
-    ld a, c
-    ld [TransitionSpiral1BytesLeft], a
-    ld a, b
-    ld [TransitionSpiral1BytesLeft+1], a
+    WriteByteCount TransitionSpiral1BytesLeft
 
     ; is data finished loading?
     ld a, [DataLoaded]
@@ -251,17 +176,11 @@ VBlankLoad:
 
     ld de, spiral2
 
-    ld a, e
-    ld [TempSrcAddress], a
-    ld a, d
-    ld [TempSrcAddress+1], a
+    WriteTempSrcAddress
 
     ld hl, $8800
 
-    ld a, l
-    ld [TempDestAddress], a
-    ld a, h
-    ld [TempDestAddress+1], a
+    WriteTempDestAddress
 
     ; reset data loaded bool
     ld a, 0
@@ -270,17 +189,11 @@ VBlankLoad:
     jp .end
 
 .LoadSpiral2:
-    ld a, [TransitionSpiral2BytesLeft]
-    ld c, a
-    ld a, [TransitionSpiral2BytesLeft+1]
-    ld b, a
+    GetByteCount TransitionSpiral2BytesLeft
 
     call LoadingMemCpy
 
-    ld a, c
-    ld [TransitionSpiral2BytesLeft], a
-    ld a, b
-    ld [TransitionSpiral2BytesLeft+1], a
+    WriteByteCount TransitionSpiral2BytesLeft
 
     ; is data finished loading?
     ld a, [DataLoaded]
@@ -294,17 +207,11 @@ VBlankLoad:
 
     ld de, spiral_map
 
-    ld a, e
-    ld [TempSrcAddress], a
-    ld a, d
-    ld [TempSrcAddress+1], a
+    WriteTempSrcAddress
 
     ld hl, $9800
 
-    ld a, l
-    ld [TempDestAddress], a
-    ld a, h
-    ld [TempDestAddress+1], a
+    WriteTempDestAddress
 
     ; reset data loaded bool
     ld a, 0
@@ -313,17 +220,11 @@ VBlankLoad:
     jp .end
 
 .LoadSpiralMap:
-    ld a, [TransitionSpiralMapBytesLeft]
-    ld c, a
-    ld a, [TransitionSpiralMapBytesLeft+1]
-    ld b, a
+    GetByteCount TransitionSpiralMapBytesLeft
 
     call LoadingMemCpy
 
-    ld a, c
-    ld [TransitionSpiralMapBytesLeft], a
-    ld a, b
-    ld [TransitionSpiralMapBytesLeft+1], a
+    WriteByteCount TransitionSpiralMapBytesLeft
 
     ; is data finished loading?
     ld a, [DataLoaded]
@@ -335,21 +236,11 @@ VBlankLoad:
     ld a, 1
     ld [SpiralMapLoaded], a
 
-    /*
-	ld a, 20
-	ld [TMP], a
-	ld hl, $9800
-	ld bc, spiral_map_end - spiral1_end
-	ld de, spiral_map
-	call memcpy_scrn
-    */
-
     ; reset data loaded bool
     ld a, 0
     ld [DataLoaded], a
 
-    jp .end
-
+    WriteAddress VBlank1, VBlankVector
 .end:
    reti
 

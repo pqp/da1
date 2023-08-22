@@ -46,6 +46,10 @@ charset::
 INCBIN "res/charset.2bpp",128
 charset_end::
 
+;;;;
+;;;; for scene1.asm
+;;;;
+
 SECTION "Bank 1", ROMX
 
 ;goat::
@@ -62,4 +66,5 @@ spiral2_end::
 
 spiral_map::
 INCBIN "res/spiraali.map"
+DB 0, 0, 0, 0, 0, 0, 0, 0
 spiral_map_end::

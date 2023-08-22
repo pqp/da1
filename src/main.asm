@@ -99,6 +99,7 @@ memcpy_scrn::
 	cp a, 0
 	jp nz, memcpy_scrn
 .reset:
+	; write 16-bit byte count to memory
 	ld a, b
 	ld [TMP], a
 	ld a, c
@@ -108,7 +109,7 @@ memcpy_scrn::
 	ld bc, 12 
 	add hl, bc
 
-	; load total byte count into BC
+	; load total byte count back into BC
 	ld a, [TMP]
 	ld b, a
 	ld a, [TMP+1]
